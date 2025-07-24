@@ -20,7 +20,7 @@ This script uses the [Notte SDK](https://github.com/nottelabs/notte) to automate
 ### 1. Install Dependencies
 
 ```bash
-pip install notte-sdk python-dotenv
+pip install notte python-dotenv
 ```
 
 ### 2. Create a `.env` File
