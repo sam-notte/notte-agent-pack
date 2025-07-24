@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from notte import NotteClient
+from notte_sdk.client import NotteClient
 
 def main():
     # Load environment variables
@@ -12,6 +12,9 @@ def main():
     site_2 = os.getenv("SITE_2")
     site_3 = os.getenv("SITE_3")
     region = os.getenv("REGION", "United States")
+
+    headless_env = os.getenv("HEADLESS", "True")
+    headless = headless_env.lower() in ("1", "true", "yes", "on")
 
     # Basic validation
     missing = []
@@ -29,54 +32,91 @@ def main():
         print(f"❌ Please set the following variables in your .env file: {', '.join(missing)}")
         return
 
-    task = f"""
-Compare the price and key details for the product \"{product_name}\" across the following websites:
+    client = NotteClient(api_key=api_key)
 
-1. {site_1}
-2. {site_2}
-3. {site_3}
+    sites = [
+        {"name": "apple.com", "url": site_1},
+        {"name": "amazon.com", "url": site_2},
+        {"name": "bestbuy.com", "url": site_3},
+    ]
 
-Instructions:
-- On each site, search for the product if not directly linked.
-- If multiple results appear, click into the most relevant or top-listed product **before extracting any data**.
-- Extract only visible, user-facing information from the product **detail page**, including:
+    results = []
+    summary_rows = []
+
+    for site in sites:
+        session = client.Session(headless=headless)
+        session.start()
+        agent = client.Agent(session=session)
+        task = f'''
+Go to {site['url']} and search for "{product_name}".
+- Immediately click the first non-sponsored product result.
+- If a popup, overlay, or region prompt appears, close or accept it and set region to "{region}".
+- Do not click on ads, sponsored results, or unrelated links.
+- Extract only the following from the product detail page:
   - Title
   - Price
   - Discount or promo (if shown)
-- If you cannot find the exact product (e.g., M2), extract the closest available version and note the difference.
-- If you cannot extract information from a site after several attempts, skip it and return results for the other sites.
-- If a site asks for a region or delivery location, set it to \"{region}\".
-- Do not use element IDs, CSS selectors, or hidden content. Treat this like a human browsing manually.
-- If you encounter a cookie banner, popup, or overlay on any site, always close or accept it before searching or clicking any buttons. If a button is not clickable, wait a few seconds, close any overlays, and try again.
-
-Repeat this full process for **all three** sites. If you cannot complete all three, return partial results and note any issues.
-
-Return the results in this format:
+- If you cannot find the exact product, extract the closest version and note the difference.
+- If you cannot extract information after 2 attempts, skip and note the issue.
+Return the result in this format:
 
 ---
-Site: [site name]
+Site: {site['name']}
 Title: ...
 Price: ...
-Discount: ...  # or \"None\"
+Discount: ...
 ---
-"""
+'''
+        try:
+            result = agent.run(task=task)
+            answer = result.answer.strip()
+            results.append(answer)
+            # Try to extract summary info for the table
+            title, price, discount = "", "", ""
+            for line in answer.splitlines():
+                if line.lower().startswith("title:"):
+                    title = line.split(":", 1)[1].strip()
+                if line.lower().startswith("price:"):
+                    price = line.split(":", 1)[1].strip()
+                if line.lower().startswith("discount:"):
+                    discount = line.split(":", 1)[1].strip()
+            
+            # Check if we got any meaningful data
+            if not title and not price:
+                title = "No data extracted"
+                price = "N/A"
+                discount = "N/A"
+                
+            summary_rows.append((site['name'], title, price, discount, len(getattr(result, 'steps', []))))
+        except Exception as e:
+            error_msg = f"Error: {str(e)}"
+            if "max steps" in str(e).lower():
+                error_msg = "Timeout: Agent reached maximum steps"
+            elif "max consecutive failures" in str(e).lower():
+                error_msg = "Failed: Too many consecutive failures"
+            
+            results.append(f"---\nSite: {site['name']}\n{error_msg}\n---")
+            summary_rows.append((site['name'], error_msg, "N/A", "N/A", 0))
 
-    # Run the agent
-    client = NotteClient(api_key=api_key)
-    agent = client.Agent(headless=True, max_steps=60)
-    response = agent.run(task=task)
+    print("\nAgent Response (per site):\n")
+    for r in results:
+        print(r)
 
-    # Output
-    if response.answer:
-        print("\nAgent Response:\n")
-        print(response.answer.strip())
-    else:
-        print("No answer returned by the agent. The agent may have failed, timed out, or hit the max steps limit.")
-        # Optionally print more debug info if available
-        if hasattr(response, "error"):
-            print("Agent error:", response.error)
-        if hasattr(response, "status"):
-            print("Agent status:", response.status)
+    # Print summary table in vertical format
+    print("\n" + "="*50)
+    print("SUMMARY RESULTS")
+    print("="*50)
+    
+    for i, row in enumerate(summary_rows, 1):
+        site, title, price, discount, steps = row
+        print(f"\n{i}. {site.upper()}")
+        print("-" * 50)
+        print(f"   Title:     {title}")
+        print(f"   Price:     {price}")
+        print(f"   Discount:  {discount}")
+        print(f"   Steps:     {steps}")
+    
+    print("\n" + "="*50)
 
 if __name__ == "__main__":
     main()
