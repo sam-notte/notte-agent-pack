@@ -7,10 +7,11 @@ This script uses the [Notte SDK](https://github.com/nottelabs/notte) to automate
 ## Features
 
 - **Environment-agnostic:** All config via `.env`
+- **Headless toggle:** Control visible vs. invisible browser via `HEADLESS` flag
 - **Agentic automation:** Uses Notte agents to navigate, search, and extract data
 - **Multi-site compatible:** Works across any three target URLs
-- **Error-resilient:** Handles popups, region prompts, missing data
-- **Structured output:** Prints raw agent responses + summary table
+- **Error-resilient:** Handles popups, region prompts, agent timeouts and failure limits
+- **Structured output:** Prints raw agent responses + clean vertical summary
 
 ---
 
@@ -31,9 +32,11 @@ SITE_1=https://www.apple.com/
 SITE_2=https://www.amazon.com/
 SITE_3=https://www.bestbuy.com/
 REGION=United States
+HEADLESS=True
 ```
 
-> `REGION` is optional and defaults to `United States` if not set.
+> `REGION` defaults to `United States` if unset.  
+> `HEADLESS` (optional): defaults to `True`. Accepts `True`, `False`, `1`, `0`, `yes`, `no`, etc. (case-insensitive)
 
 ---
 
@@ -67,18 +70,38 @@ Discount: None
 ```text
 ---
 Site: bestbuy.com
-Error: Timed out waiting for element
+Timeout: Agent reached maximum steps
 ---
 ```
 
-### Summary Table
+### Vertical Summary Table
 
 ```text
-Site            Title                                   Price           Discount             Steps
-----------------------------------------------------------------------------------------------------
-apple.com       iPhone 15 Pro                           $999            None                 12
-amazon.com      iPhone 15 Pro (Unlocked)                $989            Prime Deal -$10      14
-bestbuy.com     Error                                   -               -                    0
+==================================================
+SUMMARY RESULTS
+==================================================
+
+1. APPLE.COM
+--------------------------------------------------
+   Title:     iPhone 15 Pro
+   Price:     $999
+   Discount:  None
+   Steps:     13
+
+2. AMAZON.COM
+--------------------------------------------------
+   Title:     iPhone 15 Pro (Unlocked)
+   Price:     $989
+   Discount:  Prime Deal -$10
+   Steps:     14
+
+3. BESTBUY.COM
+--------------------------------------------------
+   Title:     Timeout: Agent reached maximum steps
+   Price:     N/A
+   Discount:  N/A
+   Steps:     0
+==================================================
 ```
 
 ---
@@ -93,7 +116,8 @@ bestbuy.com     Error                                   -               -       
 
 ## Notes
 
-- Script halts early if required environment variables are missing.
-- Agent avoids sponsored links, overlays, and unrelated content.
-- Retry logic handled by Notte’s internal mechanism.
+- Script exits early if required `.env` vars are missing.
+- Browser visibility is controlled by the `HEADLESS` flag.
+- Handles popup overlays and region settings automatically.
+- Gracefully handles max-step timeouts and consecutive failure crashes.
 
